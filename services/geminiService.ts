@@ -3,8 +3,28 @@ import { SYSTEM_INSTRUCTION, TOOLS } from "../constants";
 import { inventoryService } from "./inventoryService";
 import { wooService } from "./wooService";
 
-// Initialize Gemini Client
-const apiKey = process.env.API_KEY || ''; 
+// Helper to retrieve API Key safely across different environments (Vite, Next.js, CRA, Node)
+const getApiKey = (): string => {
+    // 1. Try Vite (Standard for this file structure)
+    // @ts-ignore
+    if (typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_KEY) {
+        // @ts-ignore
+        return import.meta.env.VITE_API_KEY;
+    }
+    
+    // 2. Try Standard Node/Webpack/Next/CRA
+    if (typeof process !== 'undefined' && process.env) {
+        // Check for common framework prefixes
+        return process.env.REACT_APP_API_KEY || 
+               process.env.NEXT_PUBLIC_API_KEY || 
+               process.env.API_KEY || 
+               '';
+    }
+    
+    return '';
+};
+
+const apiKey = getApiKey();
 const ai = new GoogleGenAI({ apiKey });
 
 // Helper to execute tools based on AI request
@@ -59,7 +79,7 @@ export const geminiService = {
     // Main Chat Function
     // Handles the conversational loop including tool execution
     sendMessage: async (history: Content[], userMessage: string): Promise<string> => {
-        if (!apiKey) return "Error: API Key is missing. Please check your environment variables.";
+        if (!apiKey) return "Error: API Key is missing. Please check your Vercel Environment Variables. Ensure you have added 'VITE_API_KEY'.";
 
         // Use Gemini 3 Flash for optimal speed and function calling capabilities
         const model = "gemini-3-flash-preview"; 
