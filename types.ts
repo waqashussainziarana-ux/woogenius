@@ -15,6 +15,7 @@ export interface Product {
     stock_quantity: number;
     category: string;
     image_url: string;
+    serialNumbers?: string[]; // Array of IMEIs or Serial Numbers if applicable
 }
 
 export interface CartItem extends Product {
