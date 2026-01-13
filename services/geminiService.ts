@@ -106,8 +106,8 @@ export const geminiService = {
             return "Configuration Error: process.env.API_KEY is missing. Please check your environment variables.";
         }
 
-        // Use Gemini 3 Flash for optimal speed and function calling capabilities
-        const model = "gemini-3-flash-preview"; 
+        // Changed from gemini-3-flash-preview to gemini-flash-latest per user request
+        const model = "gemini-flash-latest"; 
 
         // 1. Add user message to history for the API call
         const currentHistory = [
