@@ -2,10 +2,11 @@ import React, { useState } from 'react';
 import { LayoutDashboard, ShoppingBag, Settings, LogOut, Menu } from 'lucide-react';
 import { Dashboard } from './components/Dashboard';
 import { ChatWidget } from './components/ChatWidget';
+import { SettingsView } from './components/SettingsView';
 import { inventoryService } from './services/inventoryService';
 
 export default function App() {
-  const [currentView, setCurrentView] = useState<'dashboard' | 'store'>('store');
+  const [currentView, setCurrentView] = useState<'dashboard' | 'store' | 'settings'>('store');
   const [products, setProducts] = useState<any[]>([]);
 
   React.useEffect(() => {
@@ -51,7 +52,10 @@ export default function App() {
             <ShoppingBag size={20} />
             <span>Live Store View</span>
           </button>
-          <button className="w-full flex items-center gap-3 px-4 py-3 rounded-lg hover:bg-slate-800 transition">
+          <button 
+            onClick={() => setCurrentView('settings')}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition ${currentView === 'settings' ? 'bg-indigo-600 text-white shadow-lg' : 'hover:bg-slate-800'}`}
+          >
             <Settings size={20} />
             <span>Settings</span>
           </button>
@@ -67,9 +71,9 @@ export default function App() {
 
       {/* Main Content - Adjusted margins for mobile/desktop */}
       <main className="flex-1 md:ml-64 p-4 w-full">
-        {currentView === 'dashboard' ? (
-          <Dashboard />
-        ) : (
+        {currentView === 'dashboard' && <Dashboard />}
+        {currentView === 'settings' && <SettingsView />}
+        {currentView === 'store' && (
           // Storefront Simulation
           <div className="max-w-7xl mx-auto pt-4 md:pt-8">
              <header className="mb-8 md:mb-12 text-center px-4">

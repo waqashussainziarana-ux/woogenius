@@ -1,8 +1,7 @@
 import { Product, InventoryStats } from '../types';
 
-// MOCK DATABASE
-// In production, this would be replaced by SQL queries to PostgreSQL.
-let MOCK_DB: Product[] = [
+// Initial Data Set
+const INITIAL_DATA: Product[] = [
     {
         id: '1',
         sku: 'LAP-PRO-16',
@@ -45,6 +44,19 @@ let MOCK_DB: Product[] = [
     }
 ];
 
+// MOCK DATABASE
+// In production, this would be replaced by SQL queries to PostgreSQL.
+let MOCK_DB: Product[] = JSON.parse(JSON.stringify(INITIAL_DATA));
+
+// Helper to generate a slug/sku from a product name
+const generateSku = (name: string): string => {
+    return name
+        .toLowerCase()
+        .trim()
+        .replace(/[^a-z0-9]+/g, '-') // Replace non-alphanumeric with hyphens
+        .replace(/^-+|-+$/g, '');    // Remove leading/trailing hyphens
+};
+
 // Service Methods
 export const inventoryService = {
     getAll: async (): Promise<Product[]> => {
@@ -77,37 +89,93 @@ export const inventoryService = {
         return false;
     },
 
+    resetDatabase: async (): Promise<void> => {
+        MOCK_DB = JSON.parse(JSON.stringify(INITIAL_DATA));
+        return;
+    },
+
     // CSV Upload Logic
+    // Parses specific format: Name,Category,Status,IMEI,Quantity,Cost,Price...
     processCsvUpload: async (csvText: string): Promise<number> => {
         const lines = csvText.trim().split('\n');
-        let updateCount = 0;
         
-        // Skip header
+        // Temporary Map to aggregate serialized items
+        // Key: Generated SKU
+        const aggregatedProducts = new Map<string, Product>();
+        let processedCount = 0;
+
+        // Start from 1 to skip header
+        // Expected Header: Product Name,Category,Status,Identifier (IMEI/SN),Quantity,Cost (€),Price (€),Date Added,Client,Notes
         for (let i = 1; i < lines.length; i++) {
-            const [sku, name, price, stock, category] = lines[i].split(',').map(s => s.trim());
+            const line = lines[i].trim();
+            if (!line) continue;
+
+            // Handle commas inside quotes if necessary, but assuming simple CSV for now based on sample
+            const cols = line.split(',');
             
-            const existingIdx = MOCK_DB.findIndex(p => p.sku === sku);
-            if (existingIdx !== -1) {
-                // Update existing
-                MOCK_DB[existingIdx].stock_quantity = parseInt(stock);
-                MOCK_DB[existingIdx].price = parseFloat(price);
-                updateCount++;
-            } else {
-                // Add new (simplified for demo)
-                MOCK_DB.push({
-                    id: Math.random().toString(36).substr(2, 9),
-                    sku,
-                    name,
-                    price: parseFloat(price),
-                    stock_quantity: parseInt(stock),
-                    category,
-                    description: 'Imported product',
-                    image_url: `https://picsum.photos/400/400?random=${MOCK_DB.length + 1}`
+            // Safety check for column length
+            if (cols.length < 7) continue;
+
+            const name = cols[0].trim();
+            const category = cols[1].trim();
+            const status = cols[2].trim().toLowerCase(); // 'Available' or 'Sold'
+            // const imei = cols[3].trim(); 
+            const quantity = parseInt(cols[4].trim()) || 0;
+            // const cost = parseFloat(cols[5].trim());
+            const price = parseFloat(cols[6].trim()) || 0;
+
+            if (!name) continue;
+
+            // Generate a consistent SKU based on the name to group items
+            const sku = generateSku(name);
+
+            // Initialize product in map if not exists
+            if (!aggregatedProducts.has(sku)) {
+                aggregatedProducts.set(sku, {
+                    id: sku, // using SKU as ID for this mock
+                    sku: sku,
+                    name: name,
+                    description: `${category} - ${name}`,
+                    price: price,
+                    stock_quantity: 0,
+                    category: category,
+                    image_url: `https://picsum.photos/400/400?random=${sku.length}`
                 });
-                updateCount++;
+            }
+
+            const product = aggregatedProducts.get(sku)!;
+
+            // Aggregation Logic:
+            // 1. Stock: Only add quantity if status is 'available'
+            if (status === 'available') {
+                product.stock_quantity += quantity;
+            }
+
+            // 2. Price: Update price if the current row has a valid price (prefer non-zero)
+            if (price > 0) {
+                product.price = price;
+            }
+            
+            processedCount++;
+        }
+
+        // Merge aggregated data into MOCK_DB
+        // Strategy: Upsert (Update if exists, Insert if new)
+        for (const [sku, newProductData] of aggregatedProducts) {
+            const existingIdx = MOCK_DB.findIndex(p => p.sku === sku);
+            
+            if (existingIdx !== -1) {
+                // Update existing product with fresh stock count from CSV
+                MOCK_DB[existingIdx].stock_quantity = newProductData.stock_quantity;
+                MOCK_DB[existingIdx].price = newProductData.price;
+                MOCK_DB[existingIdx].category = newProductData.category;
+            } else {
+                // Add new product
+                MOCK_DB.push(newProductData);
             }
         }
-        return updateCount;
+
+        return processedCount;
     },
 
     getStats: (): InventoryStats => {
