@@ -3,52 +3,29 @@ import { SYSTEM_INSTRUCTION, TOOLS } from "../constants";
 import { inventoryService } from "./inventoryService";
 import { wooService } from "./wooService";
 
-// STRICT REQUIREMENT: API Key must come from process.env.API_KEY
-const apiKey = process.env.API_KEY;
-const ai = new GoogleGenAI({ apiKey });
-
-// Helper to wait for a specified duration
-const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
-
-// Helper wrapper for API calls to handle 429s (Rate Limits)
-// Now includes logic to parse "retry in X seconds" from the error message
-const generateWithRetry = async (params: any, retries = 5, delay = 4000) => {
-    try {
-        return await ai.models.generateContent(params);
-    } catch (e: any) {
-        const errorMessage = e.message || JSON.stringify(e);
-        
-        // 1. Check if the API explicitly tells us how long to wait
-        // Example error: "Please retry in 23.565305139s."
-        const retryMatch = errorMessage.match(/retry in ([\d\.]+)s/);
-        
-        if (retryMatch && retryMatch[1] && retries > 0) {
-             // Parse seconds, convert to ms, add 2 second buffer
-             const waitTime = Math.ceil(parseFloat(retryMatch[1]) * 1000) + 2000;
-             console.warn(`[Gemini] Rate limit hit. API requested wait. Sleeping for ${waitTime}ms...`);
-             
-             await wait(waitTime);
-             // Retry with original delay param since we just handled the specific wait
-             return generateWithRetry(params, retries - 1, delay); 
-        }
-
-        // 2. Standard Exponential Backoff for generic 429s
-        const isRateLimit = errorMessage.includes('429') || 
-                           errorMessage.includes('RESOURCE_EXHAUSTED') || 
-                           errorMessage.includes('quota') ||
-                           e.status === 429;
-
-        if (isRateLimit && retries > 0) {
-            console.warn(`[Gemini] Rate limit hit. Retrying in ${delay}ms...`);
-            await wait(delay);
-            // Double the delay for the next attempt
-            return generateWithRetry(params, retries - 1, delay * 2);
-        }
-        
-        // If no retries left or not a rate limit error, throw
-        throw e;
+// Helper to retrieve API Key safely across different environments (Vite, Next.js, CRA, Node)
+const getApiKey = (): string => {
+    // 1. Try Vite (Standard for this file structure)
+    // @ts-ignore
+    if (typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_KEY) {
+        // @ts-ignore
+        return import.meta.env.VITE_API_KEY;
     }
+    
+    // 2. Try Standard Node/Webpack/Next/CRA
+    if (typeof process !== 'undefined' && process.env) {
+        // Check for common framework prefixes
+        return process.env.REACT_APP_API_KEY || 
+               process.env.NEXT_PUBLIC_API_KEY || 
+               process.env.API_KEY || 
+               '';
+    }
+    
+    return '';
 };
+
+const apiKey = getApiKey();
+const ai = new GoogleGenAI({ apiKey });
 
 // Helper to execute tools based on AI request
 const executeTool = async (functionCall: any): Promise<any> => {
@@ -102,9 +79,7 @@ export const geminiService = {
     // Main Chat Function
     // Handles the conversational loop including tool execution
     sendMessage: async (history: Content[], userMessage: string): Promise<string> => {
-        if (!apiKey) {
-            return "Configuration Error: process.env.API_KEY is missing. Please check your environment variables.";
-        }
+        if (!apiKey) return "Error: API Key is missing. Please check your Vercel Environment Variables. Ensure you have added 'VITE_API_KEY'.";
 
         // Use Gemini 3 Flash for optimal speed and function calling capabilities
         const model = "gemini-3-flash-preview"; 
@@ -116,8 +91,8 @@ export const geminiService = {
         ];
 
         try {
-            // 2. Initial Call to Model with Retry Wrapper
-            let response = await generateWithRetry({
+            // 2. Initial Call to Model
+            let response = await ai.models.generateContent({
                 model: model,
                 contents: currentHistory,
                 config: {
@@ -128,9 +103,7 @@ export const geminiService = {
 
             // 3. Check for Function Calls
             const candidates = response.candidates;
-            if (!candidates || candidates.length === 0) {
-                 return "The AI agent could not generate a response. (No candidates returned)";
-            }
+            if (!candidates || candidates.length === 0) return "I'm having trouble connecting right now.";
 
             const firstPart = candidates[0].content.parts[0];
             
@@ -159,8 +132,8 @@ export const geminiService = {
                     { role: "tool", parts: toolResponseParts } as Content // The result
                 ];
 
-                // 5. Final Generation based on Tool Result (Also with Retry)
-                const finalResponse = await generateWithRetry({
+                // 5. Final Generation based on Tool Result
+                const finalResponse = await ai.models.generateContent({
                     model: model,
                     contents: intermediateHistory,
                     config: {
@@ -175,30 +148,9 @@ export const geminiService = {
             // Normal text response
             return response.text || "I didn't understand that.";
 
-        } catch (e: any) {
+        } catch (e) {
             console.error("Gemini Error:", e);
-            
-            // CLEAN ERROR MESSAGE PARSING
-            let displayMessage = e.message || "Unknown communication error";
-
-            // If it's the specific raw JSON error the user encountered, parse it
-            try {
-                if (displayMessage.trim().startsWith('{')) {
-                    const parsed = JSON.parse(displayMessage);
-                    if (parsed.error && parsed.error.message) {
-                        displayMessage = parsed.error.message;
-                    }
-                }
-            } catch (parseError) {
-                // Keep original message if parsing fails
-            }
-
-            // Friendly message for Quota Limits
-            if (displayMessage.includes('429') || displayMessage.includes('quota') || displayMessage.includes('RESOURCE_EXHAUSTED')) {
-                return "⚠️ High Traffic Alert: The AI is currently experiencing heavy load (Quota Exceeded). Please wait 30 seconds and try again.";
-            }
-
-            return `AI Error: ${displayMessage}`;
+            return "Sorry, I encountered an error communicating with the AI. Please try again.";
         }
     }
 };

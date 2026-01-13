@@ -1,7 +1,8 @@
 import { Product, InventoryStats } from '../types';
 
-// Initial Data Set
-const INITIAL_DATA: Product[] = [
+// MOCK DATABASE
+// In production, this would be replaced by SQL queries to PostgreSQL.
+let MOCK_DB: Product[] = [
     {
         id: '1',
         sku: 'LAP-PRO-16',
@@ -10,8 +11,7 @@ const INITIAL_DATA: Product[] = [
         price: 2499.99,
         stock_quantity: 12,
         category: 'Laptops',
-        image_url: 'https://picsum.photos/400/400?random=1',
-        serialNumbers: []
+        image_url: 'https://picsum.photos/400/400?random=1'
     },
     {
         id: '2',
@@ -21,8 +21,7 @@ const INITIAL_DATA: Product[] = [
         price: 299.99,
         stock_quantity: 45,
         category: 'Audio',
-        image_url: 'https://picsum.photos/400/400?random=2',
-        serialNumbers: []
+        image_url: 'https://picsum.photos/400/400?random=2'
     },
     {
         id: '3',
@@ -32,8 +31,7 @@ const INITIAL_DATA: Product[] = [
         price: 999.00,
         stock_quantity: 0, // OUT OF STOCK EXAMPLE
         category: 'Phones',
-        image_url: 'https://picsum.photos/400/400?random=3',
-        serialNumbers: []
+        image_url: 'https://picsum.photos/400/400?random=3'
     },
     {
         id: '4',
@@ -43,14 +41,9 @@ const INITIAL_DATA: Product[] = [
         price: 199.50,
         stock_quantity: 8,
         category: 'Wearables',
-        image_url: 'https://picsum.photos/400/400?random=4',
-        serialNumbers: []
+        image_url: 'https://picsum.photos/400/400?random=4'
     }
 ];
-
-// MOCK DATABASE
-// In production, this would be replaced by SQL queries to PostgreSQL.
-let MOCK_DB: Product[] = JSON.parse(JSON.stringify(INITIAL_DATA));
 
 // Helper to generate a slug/sku from a product name
 const generateSku = (name: string): string => {
@@ -59,39 +52,6 @@ const generateSku = (name: string): string => {
         .trim()
         .replace(/[^a-z0-9]+/g, '-') // Replace non-alphanumeric with hyphens
         .replace(/^-+|-+$/g, '');    // Remove leading/trailing hyphens
-};
-
-// Helper to robustly parse a CSV line handling quotes
-const parseCSVLine = (text: string): string[] => {
-    const result: string[] = [];
-    let cur = '';
-    let inQuote = false;
-    for (let i = 0; i < text.length; i++) {
-        const c = text[i];
-        if (inQuote) {
-            if (c === '"') {
-                if (i + 1 < text.length && text[i + 1] === '"') {
-                    cur += '"'; // unescape ""
-                    i++;
-                } else {
-                    inQuote = false;
-                }
-            } else {
-                cur += c;
-            }
-        } else {
-            if (c === '"') {
-                inQuote = true;
-            } else if (c === ',') {
-                result.push(cur.trim());
-                cur = '';
-            } else {
-                cur += c;
-            }
-        }
-    }
-    result.push(cur.trim());
-    return result;
 };
 
 // Service Methods
@@ -108,8 +68,7 @@ export const inventoryService = {
         return MOCK_DB.filter(p => 
             p.name.toLowerCase().includes(lowerQ) || 
             p.category.toLowerCase().includes(lowerQ) ||
-            p.sku.toLowerCase().includes(lowerQ) ||
-            (p.serialNumbers && p.serialNumbers.some(sn => sn.toLowerCase().includes(lowerQ)))
+            p.sku.toLowerCase().includes(lowerQ)
         );
     },
 
@@ -127,16 +86,10 @@ export const inventoryService = {
         return false;
     },
 
-    resetDatabase: async (): Promise<void> => {
-        MOCK_DB = JSON.parse(JSON.stringify(INITIAL_DATA));
-        return;
-    },
-
     // CSV Upload Logic
     // Parses specific format: Name,Category,Status,IMEI,Quantity,Cost,Price...
     processCsvUpload: async (csvText: string): Promise<number> => {
-        // Handle different newline formats
-        const lines = csvText.trim().split(/\r?\n/);
+        const lines = csvText.trim().split('\n');
         
         // Temporary Map to aggregate serialized items
         // Key: Generated SKU
@@ -149,22 +102,19 @@ export const inventoryService = {
             const line = lines[i].trim();
             if (!line) continue;
 
-            const cols = parseCSVLine(line);
+            // Handle commas inside quotes if necessary, but assuming simple CSV for now based on sample
+            const cols = line.split(',');
             
-            // Safety check for column length (allow for empty trailing columns)
-            if (cols.length < 5) continue;
+            // Safety check for column length
+            if (cols.length < 7) continue;
 
-            // Map columns based on the provided standard
-            const name = cols[0];
-            const category = cols[1];
-            const status = cols[2].toLowerCase(); // 'Available' or 'Sold'
-            const imei = cols[3]; 
-            // Quantity is often 1 per row for serialized items, but parse just in case
-            const quantity = parseInt(cols[4]) || 0;
-            
-            // Clean price string (remove currency symbols if present) before parsing
-            const priceStr = cols[6] ? cols[6].replace(/[^0-9.,]/g, '') : '0';
-            const price = parseFloat(priceStr) || 0;
+            const name = cols[0].trim();
+            const category = cols[1].trim();
+            const status = cols[2].trim().toLowerCase(); // 'Available' or 'Sold'
+            // const imei = cols[3].trim(); 
+            const quantity = parseInt(cols[4].trim()) || 0;
+            // const cost = parseFloat(cols[5].trim());
+            const price = parseFloat(cols[6].trim()) || 0;
 
             if (!name) continue;
 
@@ -174,15 +124,14 @@ export const inventoryService = {
             // Initialize product in map if not exists
             if (!aggregatedProducts.has(sku)) {
                 aggregatedProducts.set(sku, {
-                    id: sku, 
+                    id: sku, // using SKU as ID for this mock
                     sku: sku,
                     name: name,
                     description: `${category} - ${name}`,
                     price: price,
                     stock_quantity: 0,
                     category: category,
-                    image_url: `https://picsum.photos/400/400?random=${Math.floor(Math.random() * 1000)}`,
-                    serialNumbers: []
+                    image_url: `https://picsum.photos/400/400?random=${sku.length}`
                 });
             }
 
@@ -190,27 +139,15 @@ export const inventoryService = {
 
             // Aggregation Logic:
             // 1. Stock: Only add quantity if status is 'available'
-            if (status.includes('available')) {
+            if (status === 'available') {
                 product.stock_quantity += quantity;
-                
-                // Track IMEI/Serial Number if present
-                if (imei && imei.trim() !== '' && imei.toUpperCase() !== 'N/A') {
-                    if (!product.serialNumbers) product.serialNumbers = [];
-                    product.serialNumbers.push(imei.trim());
-                }
             }
 
-            // 2. Price: Update price if the current row has a valid price
-            // This handles cases where some rows might have 0 or missing price
+            // 2. Price: Update price if the current row has a valid price (prefer non-zero)
             if (price > 0) {
                 product.price = price;
             }
             
-            // 3. Category: Prefer non-empty category
-            if (category && !product.category) {
-                product.category = category;
-            }
-
             processedCount++;
         }
 
@@ -220,15 +157,10 @@ export const inventoryService = {
             const existingIdx = MOCK_DB.findIndex(p => p.sku === sku);
             
             if (existingIdx !== -1) {
-                // Update existing product
+                // Update existing product with fresh stock count from CSV
                 MOCK_DB[existingIdx].stock_quantity = newProductData.stock_quantity;
-                // Only update price if the new data has a valid price
-                if (newProductData.price > 0) {
-                    MOCK_DB[existingIdx].price = newProductData.price;
-                }
-                // Update other metadata
+                MOCK_DB[existingIdx].price = newProductData.price;
                 MOCK_DB[existingIdx].category = newProductData.category;
-                MOCK_DB[existingIdx].serialNumbers = newProductData.serialNumbers;
             } else {
                 // Add new product
                 MOCK_DB.push(newProductData);
